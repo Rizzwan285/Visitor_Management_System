@@ -1,0 +1,175 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────
+
+enum UserRole {
+  EMPLOYEE
+  STUDENT
+  OFFICE
+  SECURITY
+  ADMIN
+}
+
+enum UserDomain {
+  IITPKD
+  SMAIL
+  GENERIC
+}
+
+enum PassType {
+  EMPLOYEE_GUEST
+  OFFICE_VISITOR
+  STUDENT_FAMILY
+  WALKIN
+  STUDENT_EXIT
+}
+
+enum PassStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  ACTIVE
+  EXPIRED
+  USED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum LogAction {
+  ENTRY
+  EXIT
+}
+
+// ─── Models ──────────────────────────────────────────────────────
+
+model User {
+  id          String     @id @default(cuid())
+  email       String     @unique
+  name        String?
+  password    String?    // bcrypt hash — only for SECURITY/ADMIN credentials login
+  role        UserRole   @default(EMPLOYEE)
+  department  String?
+  hostelName  String?    // for students
+  designation String?
+  domain      UserDomain @default(IITPKD)
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  issuedPasses      VisitorPass[]      @relation("IssuedBy")
+  approvalsMade     ApprovalRequest[]  @relation("ApprovedBy")
+  approvalsRequested ApprovalRequest[] @relation("RequestedBy")
+  scannedLogs       EntryLog[]         @relation("ScannedBy")
+  notifications     Notification[]
+}
+
+model VisitorPass {
+  id                    String     @id @default(uuid())
+  passCode              String     @unique // IITPKD-2024-XXXXX
+  type                  PassType
+  status                PassStatus @default(PENDING_APPROVAL)
+
+  issuedBy              User       @relation("IssuedBy", fields: [issuedById], references: [id])
+  issuedById            String
+  issuedAt              DateTime   @default(now())
+
+  // Visitor details
+  visitorName           String
+  visitorSex            String?
+  visitorAge            Int?
+  visitorMobile         String?
+  purpose               String
+  relation              String?    // for family visits
+  pointOfContact        String?
+
+  // Visit window
+  visitFrom             DateTime
+  visitTo               DateTime
+
+  // Student-specific
+  hostelName            String?    // exit pass
+  confirmedByEmployee   String?    // walk-in
+
+  // ID verification
+  idCardType            String?
+  idCardNumber          String?
+
+  // Attachments
+  photoUrl              String?    // Supabase storage URL
+  qrPayload             String?    // JSON string — HMAC signed
+  pdfUrl                String?
+
+  // Notification tracking
+  emailsSentTo          String[]   @default([])
+
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+
+  approvalRequests      ApprovalRequest[]
+  entryLogs             EntryLog[]
+}
+
+model ApprovalRequest {
+  id            String         @id @default(cuid())
+
+  pass          VisitorPass    @relation(fields: [passId], references: [id])
+  passId        String
+
+  requestedBy   User           @relation("RequestedBy", fields: [requestedById], references: [id])
+  requestedById String
+
+  approvedBy    User?          @relation("ApprovedBy", fields: [approvedById], references: [id])
+  approvedById  String?
+
+  status        ApprovalStatus @default(PENDING)
+  remarks       String?
+
+  createdAt     DateTime       @default(now())
+  resolvedAt    DateTime?
+}
+
+model EntryLog {
+  id          String     @id @default(cuid())
+
+  pass        VisitorPass @relation(fields: [passId], references: [id])
+  passId      String
+
+  scannedBy   User       @relation("ScannedBy", fields: [scannedById], references: [id])
+  scannedById String
+
+  scannedAt   DateTime   @default(now())
+  gateName    String
+  action      LogAction
+  deviceInfo  String?
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  type      String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model AllowedGenericUser {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  role      UserRole @default(OFFICE)
+  addedById String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
